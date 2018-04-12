@@ -1,0 +1,22 @@
+---
+driver:
+  name: vagrant
+  use_sudo: false
+
+provisioner:
+  name: chef_zero
+
+verifier:
+  name: inspec
+  sudo: true
+
+platforms:
+  - name: sles-12-sp1
+    driver:
+      box: chef/sles-12-sp1-x86_64 # private box
+
+suites:
+  - name: default
+    verifier:
+      inspec_tests:
+        - path: .

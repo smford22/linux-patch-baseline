@@ -29,6 +29,8 @@ class LinuxUpdateManager < Inspec.resource(1)
       @update_mgmt = RHELUpdateFetcher.new(inspec)
     when 'debian'
       @update_mgmt = UbuntuUpdateFetcher.new(inspec)
+    when 'suse'
+      @update_mgmt = SUSEUpdateFetcher.new(inspec)
     end
     return skip_resource 'The `linux_update` resource is not supported on your OS.' if @update_mgmt.nil?
   end
@@ -136,6 +138,40 @@ EOH
 python -c 'import sys; sys.path.insert(0, "/usr/share/yum-cli"); import cli; list = cli.YumBaseCli().returnPkgLists(["updates"]);res = ["{\\"name\\":\\""+x.name+"\\", \\"version\\":\\""+x.version+"-"+x.release+"\\",\\"arch\\":\\""+x.arch+"\\",\\"repository\\":\\""+x.repo.id+"\\"}" for x in list.updates]; print "{\\"available\\":["+",".join(res)+"]}"'
 EOH
     cmd = @inspec.bash(rhel_updates)
+    unless cmd.exit_status == 0
+      # essentially we want https://github.com/chef/inspec/issues/1205
+      STDERR.puts 'Could not determine patch status.'
+      return nil
+    end
+
+    first = cmd.stdout.index('{')
+    res = cmd.stdout.slice(first, cmd.stdout.size - first)
+    begin
+      JSON.parse(res)
+    rescue JSON::ParserError => _e
+      return []
+    end
+  end
+end
+
+class SUSEUpdateFetcher < UpdateFetcher
+  def packages
+    suse_packages = <<-EOH
+sleep 2 && echo " "
+echo -n '{"installed":['
+rpm -qa --queryformat '"name":"%{NAME}","version":"%{VERSION}-%{RELEASE}","arch":"%{ARCH}"\\n' |\\
+  awk '{ printf "{"$1"}," }' | rev | cut -c 2- | rev | tr -d '\\n'
+echo -n ']}'
+EOH
+    parse_json(suse_packages)
+  end
+
+  def updates
+    suse_updates = <<-EOH
+#!/bin/sh
+python -c 'import sys; sys.path.insert(0, "/usr/share/yum-cli"); import cli; list = cli.YumBaseCli().returnPkgLists(["updates"]);res = ["{\\"name\\":\\""+x.name+"\\", \\"version\\":\\""+x.version+"-"+x.release+"\\",\\"arch\\":\\""+x.arch+"\\",\\"repository\\":\\""+x.repo.id+"\\"}" for x in list.updates]; print "{\\"available\\":["+",".join(res)+"]}"'
+EOH
+    cmd = @inspec.bash(suse_updates)
     unless cmd.exit_status == 0
       # essentially we want https://github.com/chef/inspec/issues/1205
       STDERR.puts 'Could not determine patch status.'
